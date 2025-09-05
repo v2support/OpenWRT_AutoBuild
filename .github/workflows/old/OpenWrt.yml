@@ -1,0 +1,363 @@
+name: Build OpenWrt for Xiaomi AX3000T
+
+on:
+  workflow_dispatch: # 允许在GitHub网页界面手动触发工作流
+  repository_dispatch: # 允许通过API事件触发
+
+env:
+  REPO_URL: https://github.com/openwrt/openwrt
+  REPO_BRANCH: openwrt-24.10
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  UPLOAD_BIN_DIR: false
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: 清理环境
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo apt-get autoremove -y
+        sudo apt-get autoclean
+        df -h
+
+    - name: 安装编译环境
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential ccache ecj fastjar file g++ gawk \
+        gettext git java-propose-classpath libelf-dev libncurses5-dev \
+        libncursesw5-dev libssl-dev python3 python3-setuptools python3-pip \
+        python3-dev unzip wget rsync subversion swig time \
+        xsltproc zlib1g-dev clang
+
+    - name: 下载OpenWrt源码
+      run: |
+        echo "下载OpenWrt 24.10版本..."
+        git clone $REPO_URL -b $REPO_BRANCH --depth=1
+        cd openwrt
+        echo "源码下载完成"
+
+    - name: 更新feeds - 只使用官方源
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+        echo "官方feeds安装完成"
+
+    - name: 生成设备配置
+      run: |
+        cd openwrt
+        echo "配置小米AX3000T..."
+        cat > .config << 'EOF'
+        # 正确配置：小米AX3000T属于mediatek/filogic平台
+        CONFIG_TARGET_mediatek=y
+        CONFIG_TARGET_mediatek_filogic=y
+        CONFIG_TARGET_mediatek_filogic_DEVICE_xiaomi_mi-router-ax3000t=y
+        
+        # 核心系统包
+        CONFIG_PACKAGE_base-files=y
+        CONFIG_PACKAGE_busybox=y
+        CONFIG_PACKAGE_ca-bundle=y
+        CONFIG_PACKAGE_ca-certificates=y
+        CONFIG_PACKAGE_dropbear=y
+        CONFIG_PACKAGE_dnsmasq-full=y
+        CONFIG_PACKAGE_firewall4=y
+        CONFIG_PACKAGE_nftables=y
+        CONFIG_PACKAGE_ppp=y
+        CONFIG_PACKAGE_ppp-mod-pppoe=y
+        CONFIG_PACKAGE_procd=y
+        CONFIG_PACKAGE_procd-ujail=y
+        CONFIG_PACKAGE_opkg=y
+        CONFIG_PACKAGE_uci=y
+        CONFIG_PACKAGE_urandom-seed=y
+        CONFIG_PACKAGE_urngd=y
+        
+        # 网络基础包
+        CONFIG_PACKAGE_ip-full=y
+        CONFIG_PACKAGE_ipset=y
+        CONFIG_PACKAGE_iptables=y
+        CONFIG_PACKAGE_iptables-mod-conntrack-extra=y
+        CONFIG_PACKAGE_iptables-mod-ipopt=y
+        CONFIG_PACKAGE_kmod-ipt-core=y
+        CONFIG_PACKAGE_kmod-ipt-nat=y
+        CONFIG_PACKAGE_kmod-nf-conntrack=y
+        CONFIG_PACKAGE_kmod-nf-nat=y
+        
+        # 无线支持
+        CONFIG_PACKAGE_hostapd-common=y
+        CONFIG_PACKAGE_wpad-wolfssl=y
+        CONFIG_PACKAGE_kmod-cfg80211=y
+        CONFIG_PACKAGE_kmod-mac80211=y
+        CONFIG_PACKAGE_wireless-tools=y
+        
+        # VPN支持
+        CONFIG_PACKAGE_strongswan-minimal=y
+        CONFIG_PACKAGE_strongswan-charon=y
+        CONFIG_PACKAGE_strongswan-mod-aes=y
+        CONFIG_PACKAGE_strongswan-mod-kernel-netlink=y
+        CONFIG_PACKAGE_strongswan-mod-socket-default=y
+        CONFIG_PACKAGE_kmod-ipsec=y
+        CONFIG_PACKAGE_kmod-ipsec4=y
+        CONFIG_PACKAGE_kmod-crypto-aead=y
+        CONFIG_PACKAGE_kmod-crypto-authenc=y
+        
+        # LuCI Web界面
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-base=y
+        CONFIG_PACKAGE_luci-mod-admin-full=y
+        CONFIG_PACKAGE_luci-mod-network=y
+        CONFIG_PACKAGE_luci-mod-status=y
+        CONFIG_PACKAGE_luci-mod-system=y
+        CONFIG_PACKAGE_luci-theme-bootstrap=y
+        CONFIG_PACKAGE_luci-app-firewall=y
+        CONFIG_PACKAGE_luci-app-opkg=y
+        CONFIG_PACKAGE_luci-lib-base=y
+        CONFIG_PACKAGE_luci-lib-ip=y
+        CONFIG_PACKAGE_luci-lib-jsonc=y
+        CONFIG_PACKAGE_luci-lib-nixio=y
+        
+        # 基础工具
+        CONFIG_PACKAGE_curl=y
+        CONFIG_PACKAGE_wget-ssl=y
+        CONFIG_PACKAGE_nano=y
+        
+        # 移除可能冲突的包
+        # CONFIG_PACKAGE_dnsmasq is not set
+        CONFIG_PACKAGE_wpad-basic-wolfssl=n
+        
+        # 编译器优化
+        CONFIG_TARGET_OPTIMIZATION="-Os -pipe"
+        CONFIG_SOFT_FLOAT=n
+        EOF
+        
+        echo "配置文件生成完成"
+        make defconfig
+
+    - name: 执行自定义脚本第一部分
+      run: |
+        cd openwrt
+        if [ -f "../$DIY_P1_SH" ]; then
+          echo "执行自定义脚本: ../$DIY_P1_SH"
+          chmod +x "../$DIY_P1_SH"
+          "../$DIY_P1_SH"
+        else
+          echo "未找到自定义脚本: ../$DIY_P1_SH"
+        fi
+
+    - name: 执行自定义脚本第二部分
+      run: |
+        cd openwrt
+        if [ -f "../$DIY_P2_SH" ]; then
+          echo "执行自定义脚本: ../$DIY_P2_SH"
+          chmod +x "../$DIY_P2_SH"
+          "../$DIY_P2_SH"
+        else
+          echo "未找到自定义脚本: ../$DIY_P2_SH"
+        fi
+
+    - name: 下载源码包
+      run: |
+        cd openwrt
+        echo "下载编译依赖包..."
+        # 使用4线程下载
+        echo "使用 4 线程下载依赖包"
+        make download -j4
+        find dl -size -1024c -exec rm -f {} \; 2>/dev/null || true
+        echo "依赖包下载完成"
+
+    - name: 编译固件
+      run: |
+        cd openwrt
+        echo "========================================="
+        echo "开始编译 OpenWrt 24.10 for 小米AX3000T"
+        echo "编译开始时间: $(date)"
+        echo "========================================="
+        
+        # 设置编译环境变量
+        export FORCE_UNSAFE_CONFIGURE=1
+        
+        # 获取CPU核心数
+        AVAILABLE_CORES=$(nproc)
+        echo "检测到CPU核心数: ${AVAILABLE_CORES}"
+        
+        # 使用4线程编译（充分利用GitHub Actions的4核心）
+        COMPILE_THREADS=4
+        
+        echo "使用 ${COMPILE_THREADS} 线程编译"
+        echo "可用内存情况:"
+        free -h
+        echo "========================================="
+        
+        # 编译固件 - 使用4线程
+        make -j${COMPILE_THREADS} V=s
+        
+        echo "========================================="
+        echo "编译结束时间: $(date)"
+        echo "========================================="
+        
+        # 检查编译结果 - 正确的filogic目录
+        if [ -d "bin/targets/mediatek/filogic" ]; then
+          echo "✅ 编译成功！"
+          echo "固件文件："
+          ls -la bin/targets/mediatek/filogic/
+          echo "COMPILE_SUCCESS=true" >> $GITHUB_ENV
+          echo "FIRMWARE_PATH=$(pwd)/bin/targets/mediatek/filogic" >> $GITHUB_ENV
+        else
+          echo "❌ 编译失败，检查可用目录："
+          find bin/targets -type d 2>/dev/null || echo "未找到targets目录"
+          exit 1
+        fi
+
+    - name: 整理固件文件
+      if: env.COMPILE_SUCCESS == 'true'
+      run: |
+        cd ${{ env.FIRMWARE_PATH }}
+        echo "整理固件文件..."
+        
+        # 删除packages目录节省空间
+        rm -rf packages
+        
+        # 获取当前日期
+        BUILD_DATE=$(date +%Y%m%d)
+        
+        # 只保留主固件文件，过滤掉DDR和bootloader文件
+        echo "过滤文件，只保留主固件..."
+        
+        # 找到主固件文件（通常是sysupgrade或factory文件）
+        MAIN_FIRMWARE=""
+        for file in *xiaomi*sysupgrade*.bin; do
+          if [ -f "$file" ]; then
+            MAIN_FIRMWARE="$file"
+            break
+          fi
+        done
+        
+        # 如果没找到sysupgrade，寻找factory文件
+        if [ -z "$MAIN_FIRMWARE" ]; then
+          for file in *xiaomi*factory*.bin; do
+            if [ -f "$file" ]; then
+              MAIN_FIRMWARE="$file"
+              break
+            fi
+          done
+        fi
+        
+        # 如果还是没找到，寻找任何不包含ram/ddr/bl的xiaomi文件
+        if [ -z "$MAIN_FIRMWARE" ]; then
+          for file in *xiaomi*.bin; do
+            if [[ "$file" != *"ram"* ]] && [[ "$file" != *"ddr"* ]] && [[ "$file" != *"-bl"* ]]; then
+              MAIN_FIRMWARE="$file"
+              break
+            fi
+          done
+        fi
+        
+        if [ -n "$MAIN_FIRMWARE" ]; then
+          echo "找到主固件: $MAIN_FIRMWARE"
+          # 重命名主固件文件
+          newname="AX3000T-OpenWrt-24.10-${BUILD_DATE}-${MAIN_FIRMWARE}"
+          mv "$MAIN_FIRMWARE" "$newname"
+          echo "重命名: $MAIN_FIRMWARE -> $newname"
+          
+          # 删除其他所有.bin文件（包括ddr、ram、bl等）
+          find . -name "*.bin" ! -name "$newname" -delete
+          echo "已清理其他固件文件"
+          
+          echo "MAIN_FIRMWARE_NAME=$newname" >> $GITHUB_ENV
+        else
+          echo "❌ 未找到主固件文件"
+          exit 1
+        fi
+        
+        echo "========================================="
+        echo "最终固件文件："
+        ls -lh *.bin 2>/dev/null || echo "未找到文件"
+        echo "========================================="
+
+    - name: 获取当前日期
+      id: build_date
+      run: echo "date=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
+
+    - name: 获取系统信息
+      id: system_info
+      run: |
+        OS_INFO=$(cat /etc/os-release | grep PRETTY_NAME | cut -d '"' -f2)
+        echo "os_info=${OS_INFO}" >> $GITHUB_OUTPUT
+
+    - name: 创建Release
+      if: env.COMPILE_SUCCESS == 'true'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: "openwrt-24.10-${{ github.run_number }}-${{ steps.build_date.outputs.date }}"
+        name: "小米AX3000T OpenWrt 24.10 - Build ${{ github.run_number }}"
+        body: |
+          🎉 **小米AX3000T OpenWrt 24.10 固件**
+          
+          📦 **固件信息**:
+          - 🔧 基于: OpenWrt 24.10 官方版本
+          - 📅 编译时间: ${{ steps.date.outputs.date }}
+          - 🔢 构建编号: #${{ github.run_number }}
+          - 🏠 默认地址: http://10.0.0.1
+          - 👤 默认账户: root (密码为空)
+          - 🖥️ 编译环境: ${{ steps.system_info.outputs.os_info }} (4线程编译)
+          
+          ✅ **包含功能**:
+          - 📡 完整路由器功能 (防火墙、NAT、DHCP、PPPoE)
+          - 📶 Wi-Fi 6 双频支持 (2.4G + 5G)
+          - 🌐 LuCI Web管理界面
+          - 🔒 IPSec VPN服务器 (strongSwan)
+          - 🛠️ 基础网络工具 (curl, wget, nano等)
+          
+          📋 **使用说明**:
+          1. 确认设备型号为小米AX3000T v1
+          2. 刷机前务必备份原厂固件
+          3. 刷入固件后访问 http://10.0.0.1
+          4. 用户名: root，密码为空
+          5. 首次登录后请立即设置管理员密码
+          
+          ⚠️ **重要提醒**:
+          - 适用于小米AX3000T v1 (使用MT7981芯片)
+          - OpenWrt 24.10为最新版本，功能更完善
+          - 刷机有风险，操作前请确保了解刷机流程
+          
+          📁 **文件说明**:
+          - `.bin` 文件: 主固件文件
+        files: |
+          ${{ env.FIRMWARE_PATH }}/*.bin
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 获取当前时间
+      id: date
+      run: echo "date=$(date +'%Y年%m月%d日 %H:%M')" >> $GITHUB_OUTPUT
+
+    - name: 编译总结
+      if: always()
+      run: |
+        echo "========================================="
+        echo "           编译总结报告"
+        echo "========================================="
+        echo "状态: ${{ env.COMPILE_SUCCESS == 'true' && '✅ 成功' || '❌ 失败' }}"
+        echo "时间: $(date +'%Y-%m-%d %H:%M:%S')"
+        echo "版本: OpenWrt 24.10"
+        echo "设备: 小米AX3000T v1"
+        echo "构建: #${{ github.run_number }}"
+        echo "系统: ${{ steps.system_info.outputs.os_info }}"
+        echo "编译线程: 4"
+        if [ "${{ env.COMPILE_SUCCESS }}" == "true" ]; then
+          echo "固件: ${{ env.FIRMWARE_PATH }}"
+          echo "🎉 恭喜！固件编译成功，请在Release中下载使用"
+          echo "📥 下载地址: ${{ github.server_url }}/${{ github.repository }}/releases/latest"
+        else
+          echo "😞 编译失败，请检查上面的错误信息"
+        fi
+        echo "========================================="
