@@ -76,11 +76,10 @@ jobs:
           cp "../$CONFIG_FILE" .config
         else
           echo "未找到外部配置文件，使用默认配置"
-          cat > .config << 'EOF'
-          CONFIG_TARGET_mediatek=y
-          CONFIG_TARGET_mediatek_filogic=y
-          CONFIG_TARGET_mediatek_filogic_DEVICE_xiaomi_mi-router-ax3000t=y
-          EOF
+          # 使用简单的配置，避免EOF问题
+          echo "CONFIG_TARGET_mediatek=y" > .config
+          echo "CONFIG_TARGET_mediatek_filogic=y" >> .config
+          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_xiaomi_mi-router-ax3000t=y" >> .config
         fi
         
         echo "配置文件生成完成"
