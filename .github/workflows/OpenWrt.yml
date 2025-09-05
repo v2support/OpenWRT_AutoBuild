@@ -3,6 +3,12 @@ name: Build OpenWrt for Xiaomi AX3000T
 on:
   workflow_dispatch: # 允许在GitHub网页界面手动触发工作流
   repository_dispatch: # 允许通过API事件触发
+  push: # 当有代码推送时触发
+    paths:
+      - '.github/workflows/**' # 当workflows目录下的文件有变化时
+      - 'config/**' # 当config目录下的文件有变化时
+      - 'scripts/**' # 当scripts目录下的文件有变化时
+    branches: [ main, master ] # 只在主分支触发
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt
