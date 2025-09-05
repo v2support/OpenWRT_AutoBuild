@@ -1,7 +1,7 @@
 name: Build OpenWrt 24.10 for Xiaomi AX3000T
 
 on:
-  workflow_dispatch: # 允许在GitHub网页界面手动触发工作流:cite[1]
+  workflow_dispatch: # 允许在GitHub网页界面手动触发工作流
   repository_dispatch: # 允许通过API事件触发
 
 env:
@@ -19,23 +19,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4 # 考虑使用固定版本号，例如 @v4.1.1
+        uses: actions/checkout@v4
 
       - name: Initialization environment
         env:
-        DEBIAN_FRONTEND: noninteractive
-  run: |
-    sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-    sudo docker image prune --all --force
-    sudo add-apt-repository universe
-    sudo apt-get update
-    sudo apt-get install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib git g++-multilib gperf haveged help2man intltool lib32gcc-s1 lib32stdc++6 libelf-dev libglib2.0-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw6 libpython3-dev libreadline-dev libssl-dev libtool lrzsz m4 make nano p7zip-full patch perl python3 python3-distutils python3-pip python3-setuptools python3-scons rsync scons subversion swig tar texinfo uglifyjs unzip upx-ucl wget xmlto xxd zlib1g-dev npm
-    sudo npm install -g uglify-js
-    sudo apt-get autoremove --purge -y
-    sudo apt-get clean -y
-    sudo timedatectl set-timezone "$TZ"
-    sudo mkdir -p /workdir
-    sudo chown $USER:$GROUPS /workdir
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
 
       - name: Clone OpenWrt source
         working-directory: /workdir
@@ -47,12 +45,9 @@ jobs:
         run: |
           cd /workdir/openwrt
           cat > .config <<EOF
-          # 正确配置：小米AX3000T属于mediatek/filogic平台
           CONFIG_TARGET_mediatek=y
           CONFIG_TARGET_mediatek_filogic=y
           CONFIG_TARGET_mediatek_filogic_DEVICE_xiaomi_mi-router-ax3000t=y
-
-          # 核心系统包
           CONFIG_PACKAGE_base-files=y
           CONFIG_PACKAGE_busybox=y
           CONFIG_PACKAGE_ca-bundle=y
@@ -69,8 +64,6 @@ jobs:
           CONFIG_PACKAGE_uci=y
           CONFIG_PACKAGE_urandom-seed=y
           CONFIG_PACKAGE_urngd=y
-           
-          # 网络基础包
           CONFIG_PACKAGE_ip-full=y
           CONFIG_PACKAGE_ipset=y
           CONFIG_PACKAGE_iptables=y
@@ -80,15 +73,11 @@ jobs:
           CONFIG_PACKAGE_kmod-ipt-nat=y
           CONFIG_PACKAGE_kmod-nf-conntrack=y
           CONFIG_PACKAGE_kmod-nf-nat=y
-
-          # 无线支持
           CONFIG_PACKAGE_hostapd-common=y
           CONFIG_PACKAGE_wpad-wolfssl=y
           CONFIG_PACKAGE_kmod-cfg80211=y
           CONFIG_PACKAGE_kmod-mac80211=y
           CONFIG_PACKAGE_wireless-tools=y
-
-          # VPN支持
           CONFIG_PACKAGE_strongswan-minimal=y
           CONFIG_PACKAGE_strongswan-charon=y
           CONFIG_PACKAGE_strongswan-mod-aes=y
@@ -98,8 +87,6 @@ jobs:
           CONFIG_PACKAGE_kmod-ipsec4=y
           CONFIG_PACKAGE_kmod-crypto-aead=y
           CONFIG_PACKAGE_kmod-crypto-authenc=y
-
-          # LuCI Web界面
           CONFIG_PACKAGE_luci=y
           CONFIG_PACKAGE_luci-base=y
           CONFIG_PACKAGE_luci-mod-admin-full=y
@@ -113,8 +100,6 @@ jobs:
           CONFIG_PACKAGE_luci-lib-ip=y
           CONFIG_PACKAGE_luci-lib-jsonc=y
           CONFIG_PACKAGE_luci-lib-nixio=y
-
-          # 基础工具
           CONFIG_PACKAGE_curl=y
           CONFIG_PACKAGE_wget-ssl=y
           CONFIG_PACKAGE_nano=y
@@ -128,10 +113,10 @@ jobs:
 
       - name: Compile firmware
         id: compile
-        run: >
+        run: |
           cd /workdir/openwrt
           make defconfig
-          make -j$(nproc) || make -j1 V=s # 修改了重试逻辑，失败后直接进入详细模式
+          make -j$(nproc) || make -j1 V=s
           echo "status=success" >> $GITHUB_OUTPUT
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
           [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
@@ -146,7 +131,7 @@ jobs:
           echo "status=success" >> $GITHUB_OUTPUT
 
       - name: Upload firmware artifact
-        uses: actions/upload-artifact@v4 # 使用固定版本号
+        uses: actions/upload-artifact@v4
         if: steps.organize.outputs.status == 'success'
         with:
           name: OpenWrt_AX3000T_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
@@ -160,7 +145,7 @@ jobs:
           echo "status=success" >> $GITHUB_OUTPUT
 
       - name: Upload firmware to GitHub release
-        uses: softprops/action-gh-release@v1 # 建议使用固定版本号，例如 @v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
