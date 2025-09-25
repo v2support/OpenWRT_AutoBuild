@@ -75,8 +75,8 @@ jobs:
           ./scripts/feeds install -a
           echo "官方feeds安装完成"
 
-          - name: 生成设备配置
-          run: |
+      - name: 生成设备配置
+        run: |
           cd openwrt
     
           echo "配置小米AX3000T..."
